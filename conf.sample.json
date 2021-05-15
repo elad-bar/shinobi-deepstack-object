@@ -1,0 +1,16 @@
+{
+   "plug": "DeepStack-Object",
+   "host": "localhost",
+   "tfjsBuild": "cpu",
+   "port": 8080,
+   "hostPort": 58084,
+   "key": "DeepStack-Object",
+   "mode": "client",
+   "type": "detector",
+   "deepStack": {
+	"host": "127.0.0.1",
+	"port": 5000,
+	"isSSL": false,
+	"apiKey": "api key as defined in DeepStack"
+   }
+}
