@@ -1,261 +1,115 @@
 const request = require("request");
-var fs = require('fs');
-var config = require('./conf.json')
+const fs = require('fs');
+const config = require('./conf.json')
 
-var deepStackApiKey = null;
-var objectDetectionUrl = null;
-var faceListUrl = null;
-var faceRecognitionUrl = null;
+let deepStackApiKey = null;
+let objectDetectionUrl = null;
+let faceListUrl = null;
+let faceRecognitionUrl = null;
+let detectionType = null;
+
+const detectionTypes = {
+    "face": "userid",
+    "object": "label"
+};
+
+const now = () => {
+    const d = new Date();
+
+    return d.toISOString();
+}
+
+const log = (logger, message) => {
+    logger(`${now()} [${config.plug}] ${message}`);
+}
+
+const logError = (message) => {
+    log(console.error, message);
+};
+
+const logWarn = (message) => {
+    log(console.warn, message);
+};
+
+const logInfo = (message) => {
+    log(console.info, message);
+};
+
+const logDebug = (message) => {
+    log(console.debug, message);
+};
 
 const loadConfiguration = (config) => {
-    var deepStackHost = config.deepStack["host"];
-    var deepStackPort = config.deepStack["port"];
-    var deepStackIsSSL = config.deepStack["isSSL"];
-    var deepStackProtocol = deepStackIsSSL ? "https" : "http";
+    const deepStackHost = config.deepStack["host"];
+    const deepStackPort = config.deepStack["port"];
+    const deepStackIsSSL = config.deepStack["isSSL"];
+    const deepStackProtocol = deepStackIsSSL ? "https" : "http";
 
-    var baseUrl = `${deepStackProtocol}://${deepStackHost}:${deepStackPort}/v1`;
+    const baseUrl = `${deepStackProtocol}://${deepStackHost}:${deepStackPort}/v1`;
     
     deepStackApiKey = config.deepStack["apiKey"];
     objectDetectionUrl = `${baseUrl}/vision/detection`;
     faceListUrl = `${baseUrl}/vision/face/list`;
     faceRecognitionUrl = `${baseUrl}/vision/face/recognize`;
 
-    console.log(`Host: ${deepStackHost}`);
-    console.log(`Port: ${deepStackPort}`);
-    console.log(`Protocol: ${deepStackProtocol}`);
-    console.log(`API Key: ${deepStackApiKey}`);
+    detectionType = config.plug.split("-")[1].toLowerCase();
 
-    console.log("DeepStack URL");
-    console.log(`Face List: ${faceListUrl}`);
-    console.log(`Face Recognition: ${faceRecognitionUrl}`);
-    console.log(`Object Detection: ${objectDetectionUrl}`);
+    logInfo(`Host: ${deepStackHost}`);
+    logInfo(`Port: ${deepStackPort}`);
+    logInfo(`Protocol: ${deepStackProtocol}`);
+    logInfo(`API Key: ${deepStackApiKey}`);
 
-    if(config.plug === "DeepStack-Face") {
-        startUp();
+    const startupAction = startupActions[detectionType];
+
+    if(startupAction !== null) {
+        startupAction();
     }
 };
 
-const getFormData = (url, additionalParameters) => {
-    var formData = {};
-
-    if(deepStackApiKey) {
-        formData["api_key"] = deepStackApiKey;
-    }
-
-    if(additionalParameters !== undefined && additionalParameters !== null) {
-        var keys = Object.keys(additionalParameters);
-
-        keys.forEach(k => formData[k] = additionalParameters[k]);
-    }
-
-    var requestData = {
-        url: url,
-        formData: formData
-    };
-
-    return requestData;
+const objectDetectionStartup = () => {
+    logInfo("DeepStack URL");
+    logInfo(`Object Detection: ${objectDetectionUrl}`);
 };
 
-const getRequestDuration = (timeStart) => {
-    var responseDate = new Date();
-
-	var responseTime = (responseDate.getTime() - timeStart.getTime());
-
-	return responseTime;
-};
-
-const getDeepStackObject = (prediction, tagName) => {
-    var label = prediction[tagName];
-    var confidence = prediction["confidence"];
-    var y_min = prediction["y_min"];
-    var x_min = prediction["x_min"];
-    var y_max = prediction["y_max"];
-    var x_max = prediction["x_max"];
-    var width = x_max - x_min;
-    var height = y_max - y_min;
+const faceDetectionStartup = () => {
+    logInfo("DeepStack URL");
+    logInfo(`Face List: ${faceListUrl}`);
+    logInfo(`Face Recognition: ${faceRecognitionUrl}`);
     
-    var obj = {
-        x: x_min,
-        y: y_min,
-        width: width,
-        height: height,
-        tag: label,
-        confidence: confidence,
-    };
+    const requestData = getFormData(faceListUrl, {});
+    const timeStart = new Date();
 
-    return obj;
-};
-
-const publishEvent = (d, reason, duration, matrices, tx) => {
-    var isObjectDetectionSeparate = d.mon.detector_pam === '1' && d.mon.detector_use_detect_object === '1'
-    var width = parseFloat(isObjectDetectionSeparate  && d.mon.detector_scale_y_object ? d.mon.detector_scale_y_object : d.mon.detector_scale_y)
-    var height = parseFloat(isObjectDetectionSeparate  && d.mon.detector_scale_x_object ? d.mon.detector_scale_x_object : d.mon.detector_scale_x)
-
-    var eventData = {
-        f:'trigger',
-        id:d.id,
-        ke:d.ke,
-        details: {
-            plug: config.plug,
-            name: d.id,
-            reason: reason,
-            matrices: matrices,
-            imgHeight: width,
-            imgWidth: height,
-            time: duration
-        }
-    };
-    
-    tx(eventData);
+    request.post(requestData, function (err,res,body) {
+        onFaceListResult(err, res, body, timeStart);
+    });
 };
 
 const onFaceListResult = (err, res, body, timeStart) => {
-    var duration = getRequestDuration(timeStart);
+    const duration = getRequestDuration(timeStart);
 
     try {
-        var response = JSON.parse(body);
+        const response = JSON.parse(body);
 
-        var success = response["success"];
-        var facesArr = response["faces"];
-        var faceStr = facesArr.join(",");
+        const success = response["success"];
+        const facesArr = response["faces"];
+        const faceStr = facesArr.join(",");
 
         if(success) {
-            console.log(`DeepStack loaded with the following faces: ${faceStr}, Response time: ${duration} ms`);
+            logInfo(`DeepStack loaded with the following faces: ${faceStr}, Response time: ${duration} ms`);
         } else {
-            console.log(`Failed to connect to DeepStack server, Error: ${err}, Response time: ${duration} ms`);
+            logWarn(`Failed to connect to DeepStack server, Error: ${err}, Response time: ${duration} ms`);
         }
     } catch(ex) {
-        console.log(`Error while connecting to DeepStack server, Error: ${ex}, Response time: ${duration} ms`);
+        logError(`Error while connecting to DeepStack server, Error: ${ex}, Response time: ${duration} ms`);
     }
 };
 
-const onFaceRecognitionResult = (err, res, body, timeStart, d, tx) => {
-    var duration = getRequestDuration(timeStart);
-    
-    try {
-        if(err) {
-            throw err;
-        }
-        
-        var response = JSON.parse(body);
-
-        var success = response["success"];
-
-        if(success) {
-            var predictions = response["predictions"];
-            var faces = [];
-
-            if(predictions !== null && predictions.length > 0) {
-                faces = predictions.map(p => getDeepStackObject(p, "userid"));
-            }
-
-            var unknownFacesCount = faces.filter(p => p.tag === "unknown").length;
-            var identifiedFaces = faces.filter(p => p.tag !== "unknown");
-
-            if(unknownFacesCount > 0) {
-                console.log(`${unknownFacesCount} unknown faces detected by ${d.id}, Response time: ${duration} ms`);
-            }
-
-            if(identifiedFaces.length > 0) {
-                var identifiedFacesStrArr = identifiedFaces.map(f => `${f.tag}: ${f.confidence}`);
-                var identifiedFacesStr = identifiedFacesStrArr.join(",");
-
-                console.log(`${d.id} identified faces: ${identifiedFacesStr}, Response time: ${duration} ms`);
-            }
-
-            var shouldTrigger = faces !== null && faces.length > 0;
-
-            if (shouldTrigger) {
-                publishEvent(d, "face", duration, faces, tx);
-            }
-        }
-    } catch(ex) {
-        console.log(`${config.plug} Error while processing image, Error: ${ex}, Response time: ${duration} ms, Body: ${body}`);
-    }
-};
-
-const onObjectDetetctionResult = (err, res, body, timeStart, d, tx) => {
-    var duration = getRequestDuration(timeStart);
-    
-    try {
-        if(err) {
-            throw err;
-        }
-        
-        var response = JSON.parse(body);
-
-        var success = response["success"];
-
-        if(success) {
-            var predictions = response["predictions"];
-            var objects = [];
-
-            if(predictions !== null && predictions.length > 0) {
-                objects = predictions.map(p => getDeepStackObject(p, "label"));
-            }
-
-            if(objects.length > 0) {
-                var detectedObjectsStrArr = objects.map(f => `${f.tag}: ${f.confidence}`);
-                var detectedObjectsStr = detectedObjectsStrArr.join(",");
-
-                console.log(`${d.id} detected objects: ${detectedObjectsStr}, Response time: ${duration} ms`);
-                
-                publishEvent(d, "object", duration, objects, tx);
-            }
-        }
-    } catch(ex) {
-        console.log(`${config.plug} Error while processing image, Error: ${ex}, Response time: ${duration} ms, Body: ${body}`);
-    }
-};
-
-const faceRecognition = (d, frame, tx, callback) => {
-    try{
-        image_stream = fs.createReadStream(frame);
-        
-        var form = {
-            "image": image_stream
-        };
-        
-        var requestData = getFormData(faceRecognitionUrl, form);
-        var timeStart = new Date();
-
-        request.post(requestData, function(err, res, body){
-            onFaceRecognitionResult(err, res, body, timeStart, d, tx);
-        });
-    }catch(ex){
-        console.log(`Detector error, Error: ${ex}`);
-    }
-
-    callback();
-};
-
-const objectDetection = (d, frame, tx, callback) => {
-    try{
-        image_stream = fs.createReadStream(frame);
-        
-        var form = {
-            "image": image_stream
-        };
-        
-        var requestData = getFormData(objectDetectionUrl, form);
-        var timeStart = new Date();
-
-        request.post(requestData, function(err, res, body){
-            onObjectDetetctionResult(err, res, body, timeStart, d, tx);
-        });
-    }catch(ex){
-        console.log(`Detector error, Error: ${ex}`);
-    }
-
-    callback();
-};
-
-const detectFrame = (buffer, frameLocation, detectorAction, d, s) => {
+const detectFrame = (d, s, buffer, frameLocation, detectorAction) => {
     if(frameLocation){
 		detectorAction(frameLocation);
 
 	} else {
-		d.tmpFile = s.gid(5) + '.jpg';
+		d.tmpFile = `${s.gid(5)}.jpg`;
 
 		if(!fs.existsSync(s.dir.streams)) {
 			fs.mkdirSync(s.dir.streams);
@@ -279,26 +133,172 @@ const detectFrame = (buffer, frameLocation, detectorAction, d, s) => {
             }
 		
 			try {
-				detectorAction(d.dir+d.tmpFile)
+				detectorAction(d.dir+d.tmpFile);
+
 			} catch(ex) {
-				console.error(`Detector failed to parse frame, Error: ${buffer}`);
+				logError(`Detector failed to parse frame, Error: ${ex}`);
 			}
 		})
 	}
 };
 
-const startUp = () => {
-    var requestData = getFormData(faceListUrl, {});
-    var timeStart = new Date();
+const detect = (d, tx, frame, callback) => {
+    try{
+        image_stream = fs.createReadStream(frame);
+        
+        const form = {
+            "image": image_stream
+        };
+        
+        const url = getDetectionUrl();
+        const requestData = getFormData(url, form);
+        const timeStart = new Date();
 
-    request.post(requestData, function (err,res,body) {
-        onFaceListResult(err, res, body, timeStart);
-    });
+        request.post(requestData, function(err, res, body){
+            handleDeepStackResponse(d, tx, err, body, timeStart);
+        });
+    }catch(ex){
+        logError(`Detector error, Error: ${ex}`);
+    }
+
+    callback();
+};
+
+const handleDeepStackResponse = (d, tx, err, body, timeStart) => {
+    const duration = getRequestDuration(timeStart);
+    let objects = [];
+    
+    try {
+        if(err) {
+            throw err;
+        }
+        
+        const response = JSON.parse(body);
+
+        const success = response["success"];
+
+        if(success) {
+            const predictions = response["predictions"];
+    
+            if(predictions !== null && predictions.length > 0) {
+                objects = predictions.map(p => getDeepStackObject(p));
+
+                if(objects.length > 0) {
+                    const identified = objects.filter(p => p.tag !== "unknown");
+                    const unknownCount = objects.length - identified.length;
+                    
+                    if(unknownCount > 0) {
+                        logInfo(`${d.id} detected ${unknownCount} unknown ${detectionType}s, Response time: ${duration} ms`);
+                    }
+
+                    if(identified.length > 0) {
+                        const detectedObjectsStrArr = identified.map(f => `${f.tag} [${f.confidence.toFixed(4)}]`);
+                        const detectedObjectsStr = detectedObjectsStrArr.join(",");
+
+                        logInfo(`${d.id} detected ${detectionType}s: ${detectedObjectsStr}, Response time: ${duration} ms`);
+                    }
+
+                    const isObjectDetectionSeparate = d.mon.detector_pam === '1' && d.mon.detector_use_detect_object === '1';
+                    const width = parseFloat(isObjectDetectionSeparate && d.mon.detector_scale_y_object ? d.mon.detector_scale_y_object : d.mon.detector_scale_y);
+                    const height = parseFloat(isObjectDetectionSeparate && d.mon.detector_scale_x_object ? d.mon.detector_scale_x_object : d.mon.detector_scale_x);
+
+                    const eventData = {
+                        f: 'trigger',
+                        id: d.id,
+                        ke: d.ke,
+                        details: {
+                            plug: config.plug,
+                            name: d.id,
+                            reason: detectionType,
+                            matrices: objects,
+                            imgHeight: width,
+                            imgWidth: height,
+                            time: duration
+                        }
+                    };
+                    
+                    tx(eventData);
+                }
+            }
+        }
+    } catch(ex) {
+        logError(`Error while processing image, Error: ${ex}, Response time: ${duration} ms, Body: ${body}`);
+    }
+
+    return objects
+};
+
+const getFormData = (url, additionalParameters) => {
+    const formData = {};
+
+    if(deepStackApiKey) {
+        formData["api_key"] = deepStackApiKey;
+    }
+
+    if(additionalParameters !== undefined && additionalParameters !== null) {
+        const keys = Object.keys(additionalParameters);
+
+        keys.forEach(k => formData[k] = additionalParameters[k]);
+    }
+
+    const requestData = {
+        url: url,
+        formData: formData
+    };
+
+    return requestData;
+};
+
+const getRequestDuration = (timeStart) => {
+    const responseDate = new Date();
+
+	const responseTime = (responseDate.getTime() - timeStart.getTime());
+
+	return responseTime;
+};
+
+const getDeepStackObject = (prediction) => {
+    const key = detectionTypes[detectionType];
+
+    const tag = prediction[key];
+    const confidence = prediction["confidence"];
+    const y_min = prediction["y_min"];
+    const x_min = prediction["x_min"];
+    const y_max = prediction["y_max"];
+    const x_max = prediction["x_max"];
+    const width = x_max - x_min;
+    const height = y_max - y_min;
+    
+    const obj = {
+        x: x_min,
+        y: y_min,
+        width: width,
+        height: height,
+        tag: tag,
+        confidence: confidence,
+    };
+
+    return obj;
+};
+
+const startupActions = {
+    "face": faceDetectionStartup,
+    "object": objectDetectionStartup
+};
+
+const getDetectionUrl = () => {
+    const detectionUrls = {
+        "face": faceRecognitionUrl,
+        "object": objectDetectionUrl
+    };
+
+    const url = detectionUrls[detectionType];
+
+    return url;
 };
 
 module.exports = {
     loadConfiguration: loadConfiguration,
-    faceRecognition: faceRecognition,
-    objectDetection: objectDetection,
+    detect: detect,
     detectFrame: detectFrame
 }

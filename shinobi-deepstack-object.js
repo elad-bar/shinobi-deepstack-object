@@ -1,10 +1,13 @@
 //
-// Shinobi - DeepStack Face Recognition Plugin
+// Shinobi - DeepStack Object Detection Plugin
 // Copyright (C) 2021 Elad Bar
 //
 // Base Init >>
-var config = require('./conf.json')
-var s
+const config = require('./conf.json');
+const ds = require('./deepstack.js');
+
+let s = null;
+
 const {
 		workerData
 	} = require('worker_threads');
@@ -58,14 +61,12 @@ if(workerData && workerData.ok === true) {
 }
 // Base Init />>
 
-var ds = require('./deepstack.js');
-
 s.detectObject = function(buffer, d, tx, frameLocation, callback) {
-	var detectorAction = async function(frame) {
-		ds.objectDetection(d, frame, tx, callback);
+	const detectorAction = async function(frame) {
+		ds.detect(d, tx, frame, callback);
 	};
 
-	ds.detectFrame(buffer, frameLocation, detectorAction, d, s);
+	ds.detectFrame(d, s, buffer, frameLocation, detectorAction);
 }
 
 ds.loadConfiguration(config);
