@@ -155,7 +155,7 @@ const detect = (d, tx, frame, callback) => {
         const timeStart = new Date();
 
         request.post(requestData, function(err, res, body){
-            handleDeepStackResponse(d, tx, err, body, timeStart);
+            handleDeepStackResponse(d, tx, err, res, body, timeStart);
         });
     }catch(ex){
         logError(`Detector error, Error: ${ex}`);
@@ -164,8 +164,8 @@ const detect = (d, tx, frame, callback) => {
     callback();
 };
 
-const handleDeepStackResponse = (d, tx, err, body, timeStart) => {
-    const duration = getRequestDuration(timeStart);
+const handleDeepStackResponse = (d, tx, err, res, body, timeStart) => {
+    const duration = res.elapsedTime;
     let objects = [];
     
     try {
@@ -243,6 +243,7 @@ const getFormData = (url, additionalParameters) => {
 
     const requestData = {
         url: url,
+        time: true,
         formData: formData
     };
 
