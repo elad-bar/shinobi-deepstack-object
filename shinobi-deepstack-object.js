@@ -388,12 +388,7 @@ const cleanup = function(){
             setTimeout(() => {
                 listing.kill('SIGTERM');
                 
-                postMessage({
-                    f: 'cleanupJobCompleted',
-                    msg: `${config.plug} Cleanup completed`,
-                    time: moment(),
-                });
-
+                logInfo(`Cleanup completed`);
             }, 100);
         });
 
